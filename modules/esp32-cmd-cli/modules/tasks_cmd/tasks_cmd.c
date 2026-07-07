@@ -23,6 +23,17 @@ static const char* TAG = "ESP32_CLI";
 #define TASK_SNAPSHOT_MAX_COUNT 64
 #define TASK_NAME_PRINT_LEN 20
 
+#ifndef TASKS_TOP_REFRESH_MS
+#define TASKS_TOP_REFRESH_MS 1000
+#endif
+
+#if TASKS_TOP_REFRESH_MS < 100
+#error "TASKS_TOP_REFRESH_MS must be at least 100 ms"
+#endif
+
+#define TASKS_TOP_MIN_REFRESH_MS 100
+#define TASKS_TOP_MAX_REFRESH_MS 60000
+
 typedef struct {
     uint32_t runtime_counter;
     UBaseType_t task_number;
@@ -37,6 +48,19 @@ typedef struct {
 static task_snapshot_t previous_snapshot[TASK_SNAPSHOT_MAX_COUNT];
 static size_t snapshot_count;
 static uint32_t previous_total_runtime;
+
+/***
+ * Structura necesara functiei principale
+ * Structura care contine alte 2 structuri
+ */
+static struct
+{
+    struct arg_str* subcommand;
+    struct arg_int* refresh_ms;
+    struct arg_lit* list;
+    struct arg_lit* help;
+    struct arg_end* end;
+} tasks_args;
 
 static const char* task_state_to_str(eTaskState state)
 {
@@ -243,8 +267,31 @@ static bool tasks_wait_for_stop_or_timeout(TickType_t timeout_ticks)
     return tasks_read_stop_key();
 }
 
+static uint32_t tasks_get_top_refresh_ms(void)
+{
+    if (tasks_args.refresh_ms->count == 0) {
+        return TASKS_TOP_REFRESH_MS;
+    }
+
+    int refresh_ms = tasks_args.refresh_ms->ival[0];
+    if (refresh_ms < TASKS_TOP_MIN_REFRESH_MS || refresh_ms > TASKS_TOP_MAX_REFRESH_MS) {
+        printf("Invalid refresh interval: %d ms. Allowed range: %u..%u ms.\n",
+            refresh_ms,
+            (unsigned) TASKS_TOP_MIN_REFRESH_MS,
+            (unsigned) TASKS_TOP_MAX_REFRESH_MS);
+        return 0;
+    }
+
+    return (uint32_t) refresh_ms;
+}
+
 static int tasks_top(void)
 {
+    uint32_t refresh_ms = tasks_get_top_refresh_ms();
+    if (refresh_ms == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     const int stdin_fd = fileno(stdin);
     const int old_flags = fcntl(stdin_fd, F_GETFL, 0);
     if (old_flags < 0) {
@@ -261,12 +308,12 @@ static int tasks_top(void)
     tasks_sample(false, NULL);
 
     while (true) {
-        if (tasks_wait_for_stop_or_timeout(pdMS_TO_TICKS(TASKS_TOP_MilliSec))) {
+        if (tasks_wait_for_stop_or_timeout(pdMS_TO_TICKS(refresh_ms))) {
             break;
         }
 
         printf("\033[2J\033[H");
-        printf("tasks top - refresh: 1s - press any key to stop\n");
+        printf("tasks top - refresh: %" PRIu32 " ms - press any key to stop\n", refresh_ms);
         esp_err_t err = tasks_sample(true, "Tasks live");
         if (err != ESP_OK) {
             fcntl(stdin_fd, F_SETFL, old_flags);
@@ -281,18 +328,6 @@ static int tasks_top(void)
 
 // -------------------------------------------------------------
 
-/***
- * Structura necesara functiei principale
- * Structura care contine alte 2 structuri
- */
-static struct
-{
-    struct arg_str* subcommand;
-    struct arg_lit* list;
-    struct arg_lit* help;
-    struct arg_end* end;
-} tasks_args;
-
 typedef struct
 {
     const char* name;
@@ -304,7 +339,7 @@ typedef struct
 
 static const tasks_command_entry_t tasks_cmds[] = {
     {"info", tasks_info, "Show task CPU, stack high-water mark, state, core, priority, and name"},
-    {"top", tasks_top, "Refresh task CPU view every second until any key is pressed"},
+    {"top", tasks_top, "Refresh task CPU view until any key is pressed"},
     {"reset", tasks_reset, "Reset the CPU usage baseline used by `tasks info`"},
 };
 
@@ -339,11 +374,17 @@ static void generate_tasks_cmds_help_text(void)
 
 static void print_tasks_help(void)
 {
-    printf("\nUsage: tasks <subcommand>\n\n");
+    printf("\nUsage: tasks <subcommand> [refresh_ms]\n\n");
     print_tasks_command_list();
+    printf("\nOptions:\n");
+    printf("  refresh_ms  Optional for `top`; range: %u..%u ms; default: %u ms\n",
+        (unsigned) TASKS_TOP_MIN_REFRESH_MS,
+        (unsigned) TASKS_TOP_MAX_REFRESH_MS,
+        (unsigned) TASKS_TOP_REFRESH_MS);
     printf("\nExamples:\n");
     printf("  tasks info\n");
     printf("  tasks top\n");
+    printf("  tasks top 500\n");
     printf("  tasks reset\n\n");
 }
 
@@ -376,6 +417,11 @@ static int tasks_command(int argc, char** argv)
     const char* subcommand = tasks_args.subcommand->sval[0];
     size_t      num_cmds   = sizeof(tasks_cmds) / sizeof(tasks_cmds[0]);
 
+    if (tasks_args.refresh_ms->count > 0 && strcmp(subcommand, "top") != 0) {
+        printf("Refresh interval is only supported by `tasks top`.\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     for (size_t i = 0; i < num_cmds; ++i) {
         if (strcmp(subcommand, tasks_cmds[i].name) == 0) {
             return tasks_cmds[i].function();
@@ -395,9 +441,10 @@ void cli_register_tasks_command(void)
 {
     generate_tasks_cmds_help_text();
     tasks_args.subcommand = arg_str0(NULL, NULL, "<subcommand>", tasks_cmds_help);
+    tasks_args.refresh_ms = arg_int0(NULL, NULL, "<refresh_ms>", "Optional refresh interval for `tasks top`, in milliseconds");
     tasks_args.list       = arg_lit0("l", "list", "List all available subcommands");
     tasks_args.help       = arg_lit0("h", "help", "Show tasks command help");
-    tasks_args.end        = arg_end(1);
+    tasks_args.end        = arg_end(2);
 
     const esp_console_cmd_t cmd = {
         .command  = "tasks",

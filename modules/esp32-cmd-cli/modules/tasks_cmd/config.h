@@ -1,3 +1,3 @@
 #pragma once
 
-#define TASKS_TOP_MilliSec   1000
+#define TASKS_TOP_REFRESH_MS 1500
