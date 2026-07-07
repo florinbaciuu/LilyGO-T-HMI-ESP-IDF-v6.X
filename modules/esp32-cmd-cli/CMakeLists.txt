@@ -49,6 +49,21 @@ set(nvs_cmd_srcs
 set(nvs_cmd_includes
     "modules/nvs_cmd")
 # ==================================== #
+set(gpio_cmd_srcs
+    "modules/gpio_cmd/gpio_cmd.c")
+set(gpio_cmd_includes
+    "modules/gpio_cmd")
+# ==================================== #
+set(wifi_cmd_srcs
+    "modules/wifi_cmd/wifi_cmd.c")
+set(wifi_cmd_includes
+    "modules/wifi_cmd")
+# ==================================== #
+set(net_cmd_srcs
+    "modules/net_cmd/net_cmd.c")
+set(net_cmd_includes
+    "modules/net_cmd")
+# ==================================== #
 # ==================================== #
 # ==================================== #
 # ==================================== #
@@ -68,6 +83,9 @@ set(modules_srcs
     ${mem_cmd_srcs}
     ${part_cmd_srcs}
     ${nvs_cmd_srcs}
+    ${gpio_cmd_srcs}
+    ${wifi_cmd_srcs}
+    ${net_cmd_srcs}
 
 )
 ## ------------------
@@ -83,6 +101,9 @@ set(modules_includes
     ${mem_cmd_includes}
     ${part_cmd_includes}
     ${nvs_cmd_includes}
+    ${gpio_cmd_includes}
+    ${wifi_cmd_includes}
+    ${net_cmd_includes}
 )
 ## ------------------
 set(modules_priv_includes
@@ -122,7 +143,11 @@ idf_component_register(
     esp_hw_support
     nvs_flash
     esp_wifi
+    esp_netif
+    esp_event
+    lwip
     app_update
+    esp_driver_gpio
     esp_driver_usb_serial_jtag
     perfmon
     esp_common
