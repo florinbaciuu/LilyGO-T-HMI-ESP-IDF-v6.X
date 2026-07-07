@@ -64,6 +64,11 @@ set(net_cmd_srcs
 set(net_cmd_includes
     "modules/net_cmd")
 # ==================================== #
+set(adc_cmd_srcs
+    "modules/adc_cmd/adc_cmd.c")
+set(adc_cmd_includes
+    "modules/adc_cmd")
+# ==================================== #
 # ==================================== #
 # ==================================== #
 # ==================================== #
@@ -86,6 +91,7 @@ set(modules_srcs
     ${gpio_cmd_srcs}
     ${wifi_cmd_srcs}
     ${net_cmd_srcs}
+    ${adc_cmd_srcs}
 
 )
 ## ------------------
@@ -104,6 +110,7 @@ set(modules_includes
     ${gpio_cmd_includes}
     ${wifi_cmd_includes}
     ${net_cmd_includes}
+    ${adc_cmd_includes}
 )
 ## ------------------
 set(modules_priv_includes
@@ -146,6 +153,8 @@ idf_component_register(
     esp_netif
     esp_event
     lwip
+    esp_adc
+    board_pins
     app_update
     esp_driver_gpio
     esp_driver_usb_serial_jtag

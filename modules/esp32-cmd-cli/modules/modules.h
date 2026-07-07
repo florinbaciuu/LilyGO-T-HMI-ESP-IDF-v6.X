@@ -19,5 +19,6 @@
 #include "modules/gpio_cmd/gpio_cmd.h"
 #include "modules/wifi_cmd/wifi_cmd.h"
 #include "modules/net_cmd/net_cmd.h"
+#include "modules/adc_cmd/adc_cmd.h"
 
 #endif /* MODULES_H_ */
