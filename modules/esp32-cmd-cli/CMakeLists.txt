@@ -44,6 +44,11 @@ set(part_cmd_srcs
 set(part_cmd_includes
     "modules/part_cmd")
 # ==================================== #
+set(nvs_cmd_srcs
+    "modules/nvs_cmd/nvs_cmd.c")
+set(nvs_cmd_includes
+    "modules/nvs_cmd")
+# ==================================== #
 # ==================================== #
 # ==================================== #
 # ==================================== #
@@ -62,6 +67,7 @@ set(modules_srcs
     ${log_cmd_srcs}
     ${mem_cmd_srcs}
     ${part_cmd_srcs}
+    ${nvs_cmd_srcs}
 
 )
 ## ------------------
@@ -76,6 +82,7 @@ set(modules_includes
     ${log_cmd_includes}
     ${mem_cmd_includes}
     ${part_cmd_includes}
+    ${nvs_cmd_includes}
 )
 ## ------------------
 set(modules_priv_includes
