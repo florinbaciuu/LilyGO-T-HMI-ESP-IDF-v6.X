@@ -39,6 +39,11 @@ set(mem_cmd_srcs
 set(mem_cmd_includes
     "modules/mem_cmd")
 # ==================================== #
+set(part_cmd_srcs
+    "modules/part_cmd/part_cmd.c")
+set(part_cmd_includes
+    "modules/part_cmd")
+# ==================================== #
 # ==================================== #
 # ==================================== #
 # ==================================== #
@@ -56,6 +61,7 @@ set(modules_srcs
     ${sys_cmd_srcs}
     ${log_cmd_srcs}
     ${mem_cmd_srcs}
+    ${part_cmd_srcs}
 
 )
 ## ------------------
@@ -69,6 +75,7 @@ set(modules_includes
     ${sys_cmd_includes}
     ${log_cmd_includes}
     ${mem_cmd_includes}
+    ${part_cmd_includes}
 )
 ## ------------------
 set(modules_priv_includes
@@ -108,6 +115,7 @@ idf_component_register(
     esp_hw_support
     nvs_flash
     esp_wifi
+    app_update
     esp_driver_usb_serial_jtag
     perfmon
     esp_common
