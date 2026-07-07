@@ -57,6 +57,8 @@ static struct
 {
     struct arg_str* subcommand;
     struct arg_int* refresh_ms;
+    struct arg_int* core_id;
+    struct arg_int* limit;
     struct arg_lit* list;
     struct arg_lit* help;
     struct arg_end* end;
@@ -132,7 +134,60 @@ static int compare_task_rows_by_cpu(const void* lhs, const void* rhs)
     return strcmp(a->status.pcTaskName, b->status.pcTaskName);
 }
 
-static int tasks_sample(bool print_output, const char* title)
+static bool task_core_is_any(BaseType_t core_id)
+{
+#if defined(tskNO_AFFINITY)
+    if (core_id == tskNO_AFFINITY) {
+        return true;
+    }
+#endif
+
+    return core_id < 0;
+}
+
+static bool task_matches_core_filter(BaseType_t task_core_id, int core_filter)
+{
+    if (core_filter < 0) {
+        return true;
+    }
+
+    return task_core_is_any(task_core_id) || task_core_id == core_filter;
+}
+
+static int tasks_get_core_filter(void)
+{
+    if (tasks_args.core_id->count == 0) {
+        return -1;
+    }
+
+    int core_id = tasks_args.core_id->ival[0];
+    if (core_id < 0 || core_id >= configNUMBER_OF_CORES) {
+        printf("Invalid core: %d. Allowed range: 0..%d.\n", core_id, configNUMBER_OF_CORES - 1);
+        return -2;
+    }
+
+    return core_id;
+}
+
+static esp_err_t tasks_get_limit(size_t* limit_out)
+{
+    *limit_out = 0;
+
+    if (tasks_args.limit->count == 0) {
+        return ESP_OK;
+    }
+
+    int limit = tasks_args.limit->ival[0];
+    if (limit <= 0 || limit > TASK_SNAPSHOT_MAX_COUNT) {
+        printf("Invalid limit: %d. Allowed range: 1..%u.\n", limit, (unsigned) TASK_SNAPSHOT_MAX_COUNT);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *limit_out = (size_t) limit;
+    return ESP_OK;
+}
+
+static int tasks_sample(bool print_output, const char* title, int core_filter, size_t limit)
 {
     UBaseType_t task_capacity = uxTaskGetNumberOfTasks() + 4;
     TaskStatus_t* task_stats = calloc(task_capacity, sizeof(TaskStatus_t));
@@ -160,9 +215,11 @@ static int tasks_sample(bool print_output, const char* title)
         uint32_t previous_runtime = previous ? previous->runtime_counter : stats->ulRunTimeCounter;
         uint32_t task_delta = stats->ulRunTimeCounter - previous_runtime;
 
-        rows[row_count].status = *stats;
-        rows[row_count].cpu_percent = total_delta > 0 ? (100.0f * (float) task_delta) / (float) total_delta : 0.0f;
-        row_count++;
+        if (task_matches_core_filter(stats->xCoreID, core_filter)) {
+            rows[row_count].status = *stats;
+            rows[row_count].cpu_percent = total_delta > 0 ? (100.0f * (float) task_delta) / (float) total_delta : 0.0f;
+            row_count++;
+        }
 
         if (previous != NULL) {
             previous->runtime_counter = stats->ulRunTimeCounter;
@@ -174,11 +231,20 @@ static int tasks_sample(bool print_output, const char* title)
     qsort(rows, row_count, sizeof(rows[0]), compare_task_rows_by_cpu);
 
     if (print_output) {
+        size_t shown_count = limit > 0 && limit < row_count ? limit : row_count;
+
         printf("\n%s", title ? title : "Tasks snapshot");
         if (has_baseline) {
             printf(" (delta since previous sample)\n");
         } else {
             printf(" (first sample since boot)\n");
+        }
+        printf("Filter: core=%s  limit=",
+            core_filter >= 0 ? task_core_to_str(core_filter) : "all");
+        if (limit > 0) {
+            printf("%u\n", (unsigned) limit);
+        } else {
+            printf("none\n");
         }
         printf("---------------------------------------------------------------\n");
         printf("%6s  %8s  %-9s  %-4s  %-4s  %-*s\n",
@@ -198,7 +264,7 @@ static int tasks_sample(bool print_output, const char* title)
             TASK_NAME_PRINT_LEN,
             "--------------------");
 
-        for (size_t i = 0; i < row_count; i++) {
+        for (size_t i = 0; i < shown_count; i++) {
             const TaskStatus_t* stats = &rows[i].status;
             printf("%6.2f  %8u  %-9s  %-4s  %-4u  %-*.*s\n",
                 (double) rows[i].cpu_percent,
@@ -212,7 +278,10 @@ static int tasks_sample(bool print_output, const char* title)
         }
 
         printf("---------------------------------------------------------------\n");
-        printf("Tasks: %u shown, runtime delta: %" PRIu32 "\n\n", (unsigned) row_count, total_delta);
+        printf("Tasks: %u shown / %u matched, runtime delta: %" PRIu32 "\n\n",
+            (unsigned) shown_count,
+            (unsigned) row_count,
+            total_delta);
     }
 
     free(rows);
@@ -222,7 +291,18 @@ static int tasks_sample(bool print_output, const char* title)
 
 static int tasks_info(void)
 {
-    return tasks_sample(true, "Tasks snapshot");
+    int core_filter = tasks_get_core_filter();
+    if (core_filter == -2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t limit = 0;
+    esp_err_t err = tasks_get_limit(&limit);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return tasks_sample(true, "Tasks snapshot", core_filter, limit);
 }
 
 static int tasks_reset(void)
@@ -305,7 +385,21 @@ static int tasks_top(void)
     }
 
     printf("Starting tasks top. Press any key to stop.\n");
-    tasks_sample(false, NULL);
+
+    int core_filter = tasks_get_core_filter();
+    if (core_filter == -2) {
+        fcntl(stdin_fd, F_SETFL, old_flags);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t limit = 0;
+    esp_err_t limit_err = tasks_get_limit(&limit);
+    if (limit_err != ESP_OK) {
+        fcntl(stdin_fd, F_SETFL, old_flags);
+        return limit_err;
+    }
+
+    tasks_sample(false, NULL, core_filter, limit);
 
     while (true) {
         if (tasks_wait_for_stop_or_timeout(pdMS_TO_TICKS(refresh_ms))) {
@@ -314,7 +408,7 @@ static int tasks_top(void)
 
         printf("\033[2J\033[H");
         printf("tasks top - refresh: %" PRIu32 " ms - press any key to stop\n", refresh_ms);
-        esp_err_t err = tasks_sample(true, "Tasks live");
+        esp_err_t err = tasks_sample(true, "Tasks live", core_filter, limit);
         if (err != ESP_OK) {
             fcntl(stdin_fd, F_SETFL, old_flags);
             return err;
@@ -374,17 +468,22 @@ static void generate_tasks_cmds_help_text(void)
 
 static void print_tasks_help(void)
 {
-    printf("\nUsage: tasks <subcommand> [refresh_ms]\n\n");
+    printf("\nUsage: tasks <subcommand> [refresh_ms] [--core N] [--limit N]\n\n");
     print_tasks_command_list();
     printf("\nOptions:\n");
     printf("  refresh_ms  Optional for `top`; range: %u..%u ms; default: %u ms\n",
         (unsigned) TASKS_TOP_MIN_REFRESH_MS,
         (unsigned) TASKS_TOP_MAX_REFRESH_MS,
         (unsigned) TASKS_TOP_REFRESH_MS);
+    printf("  --core N    Optional for `info` and `top`; valid cores: 0..%d; includes tasks with any-core affinity\n",
+        configNUMBER_OF_CORES - 1);
+    printf("  --limit N   Optional for `info` and `top`; show first N rows after CPU sorting\n");
     printf("\nExamples:\n");
     printf("  tasks info\n");
+    printf("  tasks info --core 0 --limit 8\n");
     printf("  tasks top\n");
     printf("  tasks top 500\n");
+    printf("  tasks top 500 --core 1 --limit 10\n");
     printf("  tasks reset\n\n");
 }
 
@@ -416,9 +515,15 @@ static int tasks_command(int argc, char** argv)
 
     const char* subcommand = tasks_args.subcommand->sval[0];
     size_t      num_cmds   = sizeof(tasks_cmds) / sizeof(tasks_cmds[0]);
+    bool        is_view_cmd = strcmp(subcommand, "info") == 0 || strcmp(subcommand, "top") == 0;
 
     if (tasks_args.refresh_ms->count > 0 && strcmp(subcommand, "top") != 0) {
         printf("Refresh interval is only supported by `tasks top`.\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if ((tasks_args.core_id->count > 0 || tasks_args.limit->count > 0) && !is_view_cmd) {
+        printf("Core and limit filters are only supported by `tasks info` and `tasks top`.\n");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -442,9 +547,11 @@ void cli_register_tasks_command(void)
     generate_tasks_cmds_help_text();
     tasks_args.subcommand = arg_str0(NULL, NULL, "<subcommand>", tasks_cmds_help);
     tasks_args.refresh_ms = arg_int0(NULL, NULL, "<refresh_ms>", "Optional refresh interval for `tasks top`, in milliseconds");
+    tasks_args.core_id    = arg_int0(NULL, "core", "<core>", "Filter by core for `tasks info` and `tasks top`");
+    tasks_args.limit      = arg_int0(NULL, "limit", "<rows>", "Limit rows for `tasks info` and `tasks top`");
     tasks_args.list       = arg_lit0("l", "list", "List all available subcommands");
     tasks_args.help       = arg_lit0("h", "help", "Show tasks command help");
-    tasks_args.end        = arg_end(2);
+    tasks_args.end        = arg_end(4);
 
     const esp_console_cmd_t cmd = {
         .command  = "tasks",

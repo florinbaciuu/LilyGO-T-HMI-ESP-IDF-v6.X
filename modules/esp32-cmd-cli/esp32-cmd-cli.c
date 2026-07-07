@@ -123,6 +123,7 @@ void cli_register_all_commands(void) {
     cli_register_timers_command();
     cli_register_sys_command();
     cli_register_log_command();
+    cli_register_mem_command();
     ESP_LOGI(TAG, "All CLI modules commands registered.");
     return;
 }

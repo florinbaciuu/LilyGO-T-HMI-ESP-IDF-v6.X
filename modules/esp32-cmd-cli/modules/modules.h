@@ -13,5 +13,6 @@
 #include "modules/timers_module_cmd/timers_module_cmd.h"
 #include "modules/sys_cmd/sys_cmd.h"
 #include "modules/log_cmd/log_cmd.h"
+#include "modules/mem_cmd/mem_cmd.h"
 
 #endif /* MODULES_H_ */
