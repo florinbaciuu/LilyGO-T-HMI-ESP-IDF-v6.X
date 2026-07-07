@@ -1,0 +1,6 @@
+ESP-IDF VERSION:    5.5.1
+PROJECT             0.0.3
+
+LAST MODIFIED:
+-5 august 2025 09:43:23
+-27november2025 16:38

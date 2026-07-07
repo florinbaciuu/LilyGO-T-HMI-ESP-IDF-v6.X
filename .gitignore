@@ -1,0 +1,6 @@
+build/
+managed_components/
+.DS_Store
+.vscode
+.cache/
+dependencies.lock
