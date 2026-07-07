@@ -125,6 +125,10 @@ void cli_register_all_commands(void) {
     cli_register_log_command();
     cli_register_mem_command();
     cli_register_part_command();
+    cli_register_nvs_command();
+    cli_register_gpio_command();
+    cli_register_wifi_command();
+    cli_register_net_command();
     ESP_LOGI(TAG, "All CLI modules commands registered.");
     return;
 }

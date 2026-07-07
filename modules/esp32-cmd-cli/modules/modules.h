@@ -15,5 +15,9 @@
 #include "modules/log_cmd/log_cmd.h"
 #include "modules/mem_cmd/mem_cmd.h"
 #include "modules/part_cmd/part_cmd.h"
+#include "modules/nvs_cmd/nvs_cmd.h"
+#include "modules/gpio_cmd/gpio_cmd.h"
+#include "modules/wifi_cmd/wifi_cmd.h"
+#include "modules/net_cmd/net_cmd.h"
 
 #endif /* MODULES_H_ */
